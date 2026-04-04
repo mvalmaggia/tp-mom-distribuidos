@@ -18,6 +18,8 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
         self.channel.basic_publish(exchange='', routing_key=self.queue_name, body=message)
 
     def start_consuming(self):
+        self.channel.basic_consume(queue=self.queue_name, on_message_callback=self.callback)
+
         self.channel.start_consuming()
 
     def stop_consuming(self):
