@@ -70,12 +70,14 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
         result = self.channel.queue_declare(queue='', exclusive=True)
         self.queue_name = result.method.queue
 
+        self.routing_keys = routing_keys
         for routing_key in routing_keys:
             self.channel.queue_bind(exchange=exchange_name, queue=self.queue_name, routing_key=routing_key)
 
     def send(self, message):
         try:
-            self.channel.basic_publish(exchange=self.exhange_name, body=message)
+            for routing_key in self.routing_keys:
+                self.channel.basic_publish(exchange=self.exhange_name, routing_key=routing_key, body=message)
         except (AMQPConnectionError, AMQPChannelError):
             raise MessageMiddlewareDisconnectedError("Connection lost while sending message.")
         except Exception as e:
