@@ -11,9 +11,6 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
         self.channel = self.connection.channel()
         self.channel.queue_declare(queue=queue_name)
         self.queue_name = queue_name
-
-    def callback(self, ch, method, properties, body):
-        print(f" [x] Received {body.decode()}")
         
     def send(self, message):
         try:
@@ -65,27 +62,40 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
     
     def __init__(self, host, exchange_name, routing_keys):
-        self._exhange_name = exchange_name
-        self._routing_keys = routing_keys
-        self._bind_to_queues(routing_keys)
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=host))
         self.channel = self.connection.channel()
+        self._exhange_name = exchange_name
         self.channel.exchange_declare(exchange=exchange_name, exchange_type='direct')
+        
+        result = self.channel.queue_declare(queue='', exclusive=True)
+        self.queue_name = result.method.queue
 
-    def _bind_to_queues(self, routing_keys):
         for routing_key in routing_keys:
-            queue_name = f"{self._exhange_name}_{routing_key}"
-            self.channel.queue_declare(queue=queue_name)
-            self.channel.queue_bind(exchange=self._exhange_name, queue=queue_name, routing_key=routing_key)
+            self.channel.queue_bind(exchange=exchange_name, queue=self.queue_name, routing_key=routing_key)
 
     def send(self, message):
-        pass
+        self._channel.basic_publish(exchange=self._exhange_name, body=message)
 
     def start_consuming(self, on_message_callback):
-        pass
+        try:
+            self.channel.basic_consume(queue=self._exhange_name, on_message_callback=on_message_callback)
+            self.channel.start_consuming()
+        except (AMQPConnectionError, AMQPChannelError):
+            raise MessageMiddlewareDisconnectedError("Connection lost while consuming messages.")
+        except Exception as e:
+            raise MessageMiddlewareMessageError(f"An error occurred while consuming messages: {str(e)}")
 
     def stop_consuming(self):
-        pass    
+        try:
+            self.channel.stop_consuming()
+        except (AMQPConnectionError, AMQPChannelError):             
+            raise MessageMiddlewareDisconnectedError("Connection lost while stopping consumption.")
+        except Exception:
+            pass
 
     def close(self):
-        pass    
+        try:
+            if self.connection.is_open:
+                self.connection.close()
+        except:
+            raise MessageMiddlewareCloseError("Failed to close the connection properly.")
