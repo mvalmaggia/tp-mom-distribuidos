@@ -64,7 +64,7 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
     def __init__(self, host, exchange_name, routing_keys):
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=host))
         self.channel = self.connection.channel()
-        self.exhange_name = exchange_name
+        self.exchange_name = exchange_name
         self.channel.exchange_declare(exchange=exchange_name, exchange_type='direct')
         
         result = self.channel.queue_declare(queue='', exclusive=True)
@@ -94,7 +94,7 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
             on_message_callback(body, ack, nack)
 
         try:
-            self.channel.basic_consume(queue=self.queue_name, on_message_callback=pika_callback_wrapper)
+            self.channel.basic_consume(queue=self.queue_name, on_message_callback=pika_callback_wrapper, auto_ack=False)
             self.channel.start_consuming()
         except (AMQPConnectionError, AMQPChannelError):
             raise MessageMiddlewareDisconnectedError("Connection lost while consuming messages.")
