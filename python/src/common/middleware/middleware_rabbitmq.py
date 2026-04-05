@@ -64,7 +64,7 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
     def __init__(self, host, exchange_name, routing_keys):
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=host))
         self.channel = self.connection.channel()
-        self._exhange_name = exchange_name
+        self.exhange_name = exchange_name
         self.channel.exchange_declare(exchange=exchange_name, exchange_type='direct')
         
         result = self.channel.queue_declare(queue='', exclusive=True)
@@ -74,11 +74,25 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
             self.channel.queue_bind(exchange=exchange_name, queue=self.queue_name, routing_key=routing_key)
 
     def send(self, message):
-        self._channel.basic_publish(exchange=self._exhange_name, body=message)
+        try:
+            self.channel.basic_publish(exchange=self.exhange_name, body=message)
+        except (AMQPConnectionError, AMQPChannelError):
+            raise MessageMiddlewareDisconnectedError("Connection lost while sending message.")
+        except Exception as e:
+            raise MessageMiddlewareMessageError(f"An error occurred while sending message: {str(e)}")
 
     def start_consuming(self, on_message_callback):
+        def pika_callback_wrapper(ch, method, properties, body):
+            def ack():
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                
+            def nack():
+                ch.basic_nack(delivery_tag=method.delivery_tag)
+            
+            on_message_callback(body, ack, nack)
+
         try:
-            self.channel.basic_consume(queue=self._exhange_name, on_message_callback=on_message_callback)
+            self.channel.basic_consume(queue=self.queue_name, on_message_callback=pika_callback_wrapper)
             self.channel.start_consuming()
         except (AMQPConnectionError, AMQPChannelError):
             raise MessageMiddlewareDisconnectedError("Connection lost while consuming messages.")
